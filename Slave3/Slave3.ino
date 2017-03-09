@@ -29,7 +29,7 @@ void setup() {
   pinMode(dRotBPin, INPUT);
 
   //I2C
-  Wire.begin(6);
+  Wire.begin(8);
   Wire.onRequest(requestEvent);
 
   //Pull Up
@@ -106,4 +106,3 @@ void loop() {
 void requestEvent(){
   Wire.write(val, 7);
 }
-

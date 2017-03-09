@@ -30,10 +30,14 @@ void loop() {
   time = micros();
   dt = float(time - t0)/1000000.00;
   t0 = time;
-  I2Crequest(8, 0);
+  I2Crequest(6, 0);
   Serial.print(" | ");
-  I2Crequest(9, 1);
+  I2Crequest(7, 1);
   Serial.print(" | ");
-  dis[0] += data[0]*dt;
-  Serial.println(dis[0]);
+  I2Crequest(8, 2);
+  Serial.print(" | ");
+  I2Crequest(9, 3);
+  Serial.println("");
+  //dis[0] += data[0]*dt;
+  //Serial.println(dis[0]);
 }

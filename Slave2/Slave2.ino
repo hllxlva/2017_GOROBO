@@ -1,16 +1,15 @@
 //Rotary Encoder
 
 #include <Wire.h>
-
 unsigned long time;//時間を格納する君
 unsigned long t0 = 0;//ひとつ前の時間を格納する君
+int dt = 0;
+int ave_time = 20000;//何µsごとのpulseを取るか
 int dRotAPin = 2;//ロータリーエンコーダA相
 int dRotBPin = 3;//ロータリーエンコーダB相
 int N;//パルスの番号格納
 int sign = 1;//回転方向
-unsigned long PR;//Pulse Rate//
 int PN;//Pulse Number//
-unsigned long pre_PR;//ひとつ前の
 volatile int m_nValueB = 0;//B相の値
 volatile int m_nValueA = 0;//A相の値
 void va();//velocityA//
@@ -21,6 +20,7 @@ float V;//最終エンコーダの速度出力
 int i;
 unsigned int value;
 byte val[7];
+void requestEvent();
 
 void setup() {
   //INPUT Mode
@@ -29,7 +29,7 @@ void setup() {
   pinMode(dRotBPin, INPUT);
 
   //I2C
-  Wire.begin(9);
+  Wire.begin(7);
   Wire.onRequest(requestEvent);
 
   //Pull Up
@@ -42,6 +42,7 @@ void setup() {
 void va(){
   m_nValueA = digitalRead(dRotAPin);
   number();
+  i++;
 }
 
 void vb(){
@@ -52,7 +53,6 @@ void vb(){
 int number(){ 
   //数字割り当て
   N = m_nValueA + 2 * m_nValueB;
-  //Serial.print("|");
   switch(N){
     case 2:
       N = 3;
@@ -61,54 +61,49 @@ int number(){
       N = 2;
       break;
   }
-
-  //numberに入る周期をPRとする
-  PR = time-t0;
-  t0 = time;
-  if(PR > 1000){//周期が大きいときにのみ符号がどっちかを見る
-    switch(N){
-      case 0:
-        if(PN == 3)sign = 1;
-        else if(PN == 1)sign = -1;
-        else sign = 0;
-        break;
-      case 1:
-        if(PN == 0)sign = 1;
-        else if(PN == 2)sign = -1;
-        else sign = 0;
-        break;
-      case 2:
-        if(PN == 1)sign = 1;
-        else if(PN == 3)sign = -1;
-        else sign = 0;
-        break;
-      case 3:
-        if(PN == 2)sign = 1;
-        else if(PN == 0)sign = -1;
-        else sign = 0;
-        break;
-    }
+  switch(N){
+    case 0:
+      if(PN == 3)sign = 1;
+      else if(PN == 1)sign = -1;
+      else sign = 0;
+      break;
+    case 1:
+      if(PN == 0)sign = 1;
+      else if(PN == 2)sign = -1;
+      else sign = 0;
+      break;
+    case 2:
+      if(PN == 1)sign = 1;
+      else if(PN == 3)sign = -1;
+      else sign = 0;
+      break;
+    case 3:
+      if(PN == 2)sign = 1;
+      else if(PN == 0)sign = -1;
+      else sign = 0;
+      break;
   }
   PN = N;//ナンバー割り当て
 }
 
 void loop() {
   time = micros();
-  //速度の単位[mm/ms];
-  V = d*PI/1440*1000/float(PR);//本来いらない
-  float dt_max = d*PI/1440*1000/0.005;
-  if(time - t0 > dt_max)
-    V = 0;     
+  dt = time - t0;
+  if(dt >= ave_time){
+    //速度の単位[mm/ms]
+    V = d*PI*float(i)/0.720/ave_time;
+    i = 0;
+    t0 = time;
+  }
   //対Arduino
-  value = 100000*V; //速度の単位[100000×mm/ms]
+  value = 100000*V; //100000倍 = 速度の単位[100000×mm/ms]
   val[0] = highByte(value);
   val[1] = lowByte(value);
   val[2] = (sign+1);
-  pre_PR = PR; 
+  //Serial.println(value);
 }
 
 void requestEvent(){
   Wire.write(val, 7);
 }
-
 
