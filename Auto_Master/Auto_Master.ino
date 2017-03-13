@@ -95,7 +95,7 @@ void Approx(float Vd[4]){//センサーの位置，エンコーダーの値か�
   }
 }
 
-void velocity(){
+void velocity(float now_pos[3]){
   float min_m_dist;
   float pre_min_m_dist = 1000;
   int min_m_dist_num;
@@ -120,9 +120,8 @@ void velocity(){
   float V_resultant[4][2];
   float V_out_float[4];
   float V_out_max=255;//(アナログ出力最大)
-
   for(int i = 0; i < ROUTE_POINT_NUM; i++){//マンハッタン距離最小値
-    min_m_dist = sq(now_p_ave[0]-route[i][0])+sq(now_p_ave[1]-route[i][1]);
+    min_m_dist = sq(float(now_pos[0]-route[i][0]))+sq(float(now_pos[1]-route[i][1]));
     if(flag){
       pre_min_m_dist = min_m_dist;
       flag = false;
@@ -135,8 +134,8 @@ void velocity(){
   flag = true;
   if(min_m_dist_num == ROUTE_POINT_NUM - 1){//最後まで行ったら速度0に
     //接線方向の速度
-    v_t[0] = route[min_m_dist_num][0] - now_p_ave[0];
-    v_t[1] = route[min_m_dist_num][1] - now_p_ave[1];
+    v_t[0] = route[min_m_dist_num][0] - now_pos[0];
+    v_t[1] = route[min_m_dist_num][1] - now_pos[1];
     r = sqrt(sq(v_t[0])+sq(v_t[1]));
     if(PRE_R){
       pre_r = r;
@@ -157,10 +156,11 @@ void velocity(){
     r = sqrt(sq(v_t[0])+sq(v_t[1]));//大きさを計算
     v_t[0] = v_t[0]/r;//方向のみ
     v_t[1] = v_t[1]/r;
-    e = sqrt(sq((route[min_m_dist_num][1] - now_p_ave[1])*(v_t[0])+(now_p_ave[0] - route[min_m_dist_num][0])*(v_t[1]))/(sq(v_t[0])+sq(v_t[1])));
+    e = sqrt(sq((route[min_m_dist_num][1] - now_pos[1])*(v_t[0])+(now_pos[0] - route[min_m_dist_num][0])*(v_t[1]))/(sq(v_t[0])+sq(v_t[1])));
     //線のどちら側にあるかを調べる
-    if(v_t[0]*(route[min_m_dist_num][1] - now_p_ave[1])+v_t[1]*(now_p_ave[0] - route[min_m_dist_num][0]) > 0){
+    if(v_t[0]*(route[min_m_dist_num][1] - now_pos[1])+v_t[1]*(now_pos[0] - route[min_m_dist_num][0]) > 0){
       e = -e;
+      Serial.print("-L");
     }
     //法線方向の比例制御
     p_v[0] = e * +v_t[1]/r;
@@ -175,11 +175,11 @@ void velocity(){
     v[1] = v_max[0]*v[1]/sqrt(R);
   }
   //------------角度操作---------------------
-  eq = route[min_m_dist_num][2] - now_p_ave[2];
-  v[2] = eq * Cp + (now_p_ave[2] - pre_pos) * Cd;//v[2] = eq * Cp - (pre_pos - now_p_ave[2]) * Cd;
+  eq = route[min_m_dist_num][2] - now_pos[2];
+  v[2] = eq * Cp + (now_pos[2] - pre_pos) * Cd;//v[2] = eq * Cp - (pre_pos - now_pos[2]) * Cd;
   if(v[2] > v_max[1])v[2] = v_max[1];
   if(v[2] < -v_max[1])v[2] = -v_max[1];
-  pre_pos = now_p_ave[2];
+  pre_pos = now_pos[2];
   
   //回転方向速度ベクトル
   for (int j = 0; j < 4; j++) {
@@ -189,8 +189,8 @@ void velocity(){
   }
   //並進方向速度ベクトル
   for (int i = 0; i < 4; i++) {
-    V_translation[i][0] =  v[0]*cos(now_p_ave[2]*PI/180)+v[1]*-sin(now_p_ave[2]*PI/180);
-    V_translation[i][1] =  v[0]*sin(now_p_ave[2]*PI/180)+v[1]*cos(now_p_ave[2]*PI/180);
+    V_translation[i][0] =  v[0]*cos(now_pos[2]*PI/180)+v[1]*-sin(now_pos[2]*PI/180);
+    V_translation[i][1] =  v[0]*sin(now_pos[2]*PI/180)+v[1]*cos(now_pos[2]*PI/180);
   }
   //並進回転合成ベクトル
   for(int i = 0; i < 4; i++){
@@ -273,7 +273,7 @@ void loop() {
   I2Crequest(9, 3);
   conversion_rate(data,dt);
   Approx(data);
-  velocity();//v[0], v[1], v[2]を出す, それぞれのメカナムの出力を返す
+  velocity(now_p_ave);//v[0], v[1], v[2]を出す, それぞれのメカナムの出力を返す
   for (int i = 0; i < 3; i++) {
     Serial.print(now_p_ave[i]);
     Serial.print("|");
