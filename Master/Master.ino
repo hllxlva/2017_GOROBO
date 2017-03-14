@@ -40,7 +40,7 @@ void conversion_rate(float Vd[4], float t){
   }
 }
 
-void Approx(float Vd[4]){//センサーの位置，エンコーダーの値から自己位置を推定する．
+void Approx(float *now_pos_ave, float Vd[4]){//センサーの位置，エンコーダーの値から自己位置を推定する．
   int C[4][2] = {//センサーの位置
     { 314.75, 0},
     { 0, 185.93},
@@ -51,7 +51,8 @@ void Approx(float Vd[4]){//センサーの位置，エンコーダーの値か�
   float now_p[3][8];//今の位置 0:X, 1:Y, 2:Ang
   float now_v[3][4];//今の速度 0:X, 1:Y, 2:Ang
   float Cr[4] = {314.75, 185.93, 314.75, 185.93};//センサーまでの距離
-
+  float now_pos_ave_c[4]; 
+  
   if(n == 1){//初期設定
     /*float Cp[4][2];
     for (int i = 0; i < 4; i++) {
@@ -81,8 +82,8 @@ void Approx(float Vd[4]){//センサーの位置，エンコーダーの値か�
   for (int i = 0; i < 2; i++){//θを求める
     now_p[2][i] = now_p[2][i] + now_v[2][i];
   }
-  now_p_ave[2] = (now_p[2][0]+now_p[2][1])/2;
-  now_p_ave[2] = now_p_ave[2]*180/PI;
+  now_pos_ave_c[2] = (now_p[2][0]+now_p[2][1])/2;
+  now_pos_ave_c[2] = now_pos_ave_c[2]*180/PI;
   for (int i = 0; i < 4; i++){//位置の各成分はここの４通りと
     now_p[0][i] = now_p[0][i]+(now_v[0][i]*cos(now_p[2][0])-now_v[1][i]*sin(now_p[2][0]));
     now_p[1][i] = now_p[1][i]+(now_v[0][i]*sin(now_p[2][0])+now_v[1][i]*cos(now_p[2][0]));
@@ -92,14 +93,17 @@ void Approx(float Vd[4]){//センサーの位置，エンコーダーの値か�
     now_p[1][i+4] = now_p[1][i+4]+(now_v[0][i]*sin(now_p[2][1])+now_v[1][i]*cos(now_p[2][1]));
   }
   for (int i = 0; i < 2; i++){
-    now_p_ave[i] = 0;
+    now_pos_ave_c[i] = 0;
     for (int j = 0; j < 8; j++){
-      now_p_ave[i] = (j*now_p_ave[i]+now_p[i][j])/(j+1);//値の重心を求める
+      now_pos_ave_c[i] = (j*now_pos_ave_c[i]+now_p[i][j])/(j+1);//値の重心を求める
     }
+  }
+  for(int i = 0; i < 3; i++){
+    *(now_pos_ave+i) = now_pos_ave_c[i];
   }
 }
 
-void velocity(float now_pos[3]){
+void velocity(int *v_out, float now_pos[3]){
   float min_m_dist;
   float pre_min_m_dist = 1000;
   int min_m_dist_num;
@@ -244,14 +248,10 @@ void loop() {
   I2Crequest(8, 0);
   I2Crequest(9, 3);
   conversion_rate(data,dt);
-  Approx(data);
-  float N_pos[3];
-  for (int i = 0; i < 3; i++) {
-    N_pos[i] = now_p_ave[i];
-  }
+  Approx(now_p_ave, data);
   //ここからは経路によって変わる
-  velocity(N_pos);//v[0], v[1], v[2]を出す, それぞれのメカナムの出力を返す
-  pre_pos = N_pos[2];
+  velocity(V_out, now_p_ave);//v[0], v[1], v[2]を出す, それぞれのメカナムの出力を返す
+  pre_pos = now_p_ave[2];
   /*for (int i = 0; i < 3; i++) {
     Serial.print(now_p_ave[i]);
     Serial.print("|");
