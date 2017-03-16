@@ -160,7 +160,6 @@ void velocity(float now_pos[3]){
     //線のどちら側にあるかを調べる
     if(v_t[0]*(route[min_m_dist_num][1] - now_pos[1])+v_t[1]*(now_pos[0] - route[min_m_dist_num][0]) > 0){
       e = -e;
-      Serial.print("-L");
     }
     //法線方向の比例制御
     p_v[0] = e * +v_t[1]/r;

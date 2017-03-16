@@ -1,5 +1,5 @@
 #define ROUTE_POINT_NUM 47
-int route[47][3] =
+signed short route[47][3] =
 { {    0 ,    0 ,    0 } ,
   {    0 ,    8 ,    0 } ,
   {    0 ,   17 ,    0 } ,
