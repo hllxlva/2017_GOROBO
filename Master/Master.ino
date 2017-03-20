@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <math.h>
+const double pi = 3.14;
 double data[4] = {0,0,0,0};//エンコーダの値
 unsigned long time;
 unsigned long t0;
@@ -9,15 +10,29 @@ int prog_num = 0;
 int n = 1;//初期設定フラグ
 //route_trace-------------------------------
 #include "tyokusen.h"//ROUTE_POINT_NUM_a, signed short route_a[][]
-//int ROUTE_POINT_NUM;
-//signed short route[100][3];
+int ROUTE_POINT_NUM;
+signed short route[100][3];
 boolean route_read = true;
 boolean flag, PRE_R = true;
 double pre_pos;
+//elevating---------------------------------
+boolean limmit_flag;
+int PhotoPin = 10;
+volatile int PhotoValue = 0;
+volatile int pre_PhotoValue = 0;
+int Height;
+int Initial_Height = 115;
+int V_out;
+int V_out_e_max=100;
+int V_out_e_min=10;
+int dh = 0;
 
 void setup() {
   Wire.begin();
   Serial.begin(250000);
+  
+  pinMode(PhotoPin,INPUT) ;
+  Height = Initial_Height;
 }
 
 void I2Crequest(int wireRequest, int data_num){
@@ -102,7 +117,7 @@ void Approx(double *now_pos_ave, double Vd[4]){//センサーの位置，エン�
   }
 }
 
-void velocity(double pre_p, double *vv, double now_pos[3]){
+void velocity(double pre_p, double *vv, double now_pos[3], int *min_num){
   double min_m_dist;
   double pre_min_m_dist = 1000;
   int min_m_dist_num;
@@ -113,21 +128,10 @@ void velocity(double pre_p, double *vv, double now_pos[3]){
   double pre_r;
   double e, eq;//, pre_e, pre_eq;//編差
   double v_max[] = {10,10};//最高速度{並進, 回転}(並進と回転の出力割合)
-  double slow_stop = 1.0;//slow_stop以外のところでの倍率
-  double slow_start = 1.0;//slow_start以外のところでの倍率
-  double slow = 5;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
-  double M[5][4] = {{243.75, -263.50, 45}, //Mecanumの位置{x, y, メカナムの角度}
-                 {-243.75, -263.50, 135}, 
-                 {-243.75, 263.50, 225},
-                 {243.75, 263.50, 315}};
   double Kt = 20.0/*20*/, Kp = 2.0/*5*/;//, Kd = 2;//2(PID)
   double Cp = 0.1, Cd = 0.5;//(PID)
-  double V_rotation[5][3];
-  double V_translation[5][3];
-  double V_resultant[5][3];
-  double V_out_float[5] = {0,0,0,0};
-  double V_out_max=255;//(アナログ出力最大)
-  int V_out_c[4];
+
+  //double V_out_max=255;//(アナログ出力最大)
   
   for(int i = 0; i < ROUTE_POINT_NUM; i++){//マンハッタン距離最小値
     min_m_dist = sq(double(now_pos[0]-route[i][0]))+sq(double(now_pos[1]-route[i][1]));
@@ -194,49 +198,120 @@ void velocity(double pre_p, double *vv, double now_pos[3]){
   v[2] = eq * Cp + (now_pos[2] - pre_p) * Cd;//v[2] = eq * Cp - (pre_p - now_pos[2]) * Cd;
   if(v[2] > v_max[1])v[2] = v_max[1];
   if(v[2] < -v_max[1])v[2] = -v_max[1];
-  /*
-  Serial.print(now_pos[2]);
-  Serial.print(F(" - "));
-  Serial.print(pre_p);
-  Serial.print(F(" = "));
-  Serial.print((now_pos[2] - pre_p));
-  Serial.print(F(" // "));
-  */
-  /*
-  //回転方向速度ベクトル
-  for (int i = 0; i < 4; i++) {
-      V_rotation[i][0] = (-1)*v[2]*PI/180*M[i][1];
-      V_rotation[i][1] = v[2]*PI/180*M[i][0];
+
+  for(int i = 0; i < 3; i++){
+    *(vv+i) = v[i];
   }
-  //並進方向速度ベクトル
-  for (int i = 0; i < 4; i++) {
-    V_translation[i][0] =  v[0]*cos(now_pos[2]*PI/180)+v[1]*-sin(now_pos[2]*PI/180);
-    V_translation[i][1] =  v[0]*sin(now_pos[2]*PI/180)+v[1]*cos(now_pos[2]*PI/180);
-  }
-  //並進回転合成ベクトル
-  for(int i = 0; i < 4; i++){
-    for(int j = 0; j < 2; j++){
-      V_resultant[i][j] = -V_rotation[i][j]+V_translation[i][j];
+  *min_num = min_m_dist_num;
+}
+
+//Auto
+route_set(int route_num){
+  int pre_route_num = -1;
+  if(pre_route_num != route_num){
+    switch(route_num){
+      case 0:
+        ROUTE_POINT_NUM = ROUTE_POINT_NUM_a;
+        for(int i = 0; i < ROUTE_POINT_NUM; i++){
+          for(int j = 0; j < 3; j++){
+            route[i][j] = route_a[i][j];
+          }
+        }
+        break;
     }
-  }*/
-  /*for (int i = 0; i < 4; i++) {
-    V_translation[i][0] = (-(-1*v[2]*PI/180*M[i][1])+(v[0]*cos(now_pos[2]*PI/180)+v[1]*-sin(now_pos[2]*PI/180)))*sin((M[i][2])*PI/180)+(-(v[2]*PI/180*M[i][0])+(v[0]*sin(now_pos[2]*PI/180)+v[1]*cos(now_pos[2]*PI/180)))*cos((M[i][2])*PI/180);
-  }*/
-  //Serial.print(e);
-  //Serial.print(F(" - "));
-  //Serial.print(route[min_m_dist_num][1]);
-  //Serial.print(" = ");
-  //Serial.print(sq(double(now_pos[0]-route[min_m_dist_num][0]))+sq(double(now_pos[1]-route[min_m_dist_num][1])));
-  //Serial.print(" // ");
-  /*
-  for(int i = 0; i < 4; i++){
-    V_resultant[i][0] = -(-1*v[2]*PI/180*M[i][1])+(v[0]*cos(now_pos[2]*PI/180)+v[1]*-sin(now_pos[2]*PI/180));
-    V_resultant[i][1] = -(v[2]*PI/180*M[i][0])+(v[0]*sin(now_pos[2]*PI/180)+v[1]*cos(now_pos[2]*PI/180));
-  }*/
-  /*
-  //各メカナム出力
-  for (int i = 0; i < 4; i++) {
-    V_out_float[i] = V_resultant[i][0]*sin((M[i][2])*PI/180)+V_resultant[i][1]*cos((M[i][2])*PI/180);
+  pre_route_num = route_num;
+  }
+}
+
+void slit_count(int sign){//1か-1を引数に
+  PhotoValue = digitalRead(PhotoPin);
+  if(pre_PhotoValue != PhotoValue){
+    dh += sign*3;//スリットが3mm刻みである故
+    pre_PhotoValue = PhotoValue;
+  }
+}
+
+void elevating(int value){
+  int sign = value/abs(value);
+  slit_count(sign);
+  V_out = sign*V_out_e_max*sin(PI/float(value)*float(dh));
+  if(abs(V_out) < abs(V_out_e_min)) V_out = sign*V_out_e_min;
+  if(abs(dh) >= abs(value)){
+    dh = 0;
+    prog_num++;
+    V_out = 0;
+  }
+}
+
+void loop() {
+  const double now_p_ave[3];//今の位置の平均 0:X, 1:Y, 2:Ang[rad]
+  double V[3];
+  int now_num;
+  int V_out[4] = {0,0,0,0};
+  
+  time = micros();
+  dt = float(time - t0)/1000000.00;
+  t0 = time;
+  //-------------------------------
+  
+  switch(prog_num){
+    case 0:
+      route_set(0);
+      break;
+  }
+  //-------------------------------
+  I2Crequest(6, 2);//I2Crequest(リクエストするArduinoの番号, dataの何番に返すか);
+  I2Crequest(7, 1);
+  I2Crequest(8, 0);
+  I2Crequest(9, 3);
+  conversion_rate(data,data,dt);
+  Approx(now_p_ave, data);
+  //ここからは経路によって変わる
+  velocity(pre_pos, V, now_p_ave, &now_num);//v[0], v[1], v[2]を出す
+  pre_pos = now_p_ave[2];
+  
+  //それぞれのメカナムの出力を返す
+  const double Meca_a_x = 243.75;
+  const double Meca_a_y = -263.50;
+  const double Meca_a_t = 45.00;
+  const double Meca_b_x = -243.75;
+  const double Meca_b_y = -263.50;
+  const double Meca_b_t = 135.00;
+  const double Meca_c_x = -243.75;
+  const double Meca_c_y = 263.50;
+  const double Meca_c_t = 225.00;
+  const double Meca_d_x = 243.75;
+  const double Meca_d_y = 263.50;
+  const double Meca_d_t = 315.00;
+
+  double V_out_float[4] = {0,0,0,0};
+  
+  V_out_float[0] = (-V[2]*pi/180.00*Meca_a_y+(V[0]*cos(float(now_p_ave[2]*pi/180.00))-V[1]*sin(float(now_p_ave[2]*pi/180.00))))*sin(float((Meca_a_t)*pi/180.00))+(V[2]*pi/180.00*Meca_a_x+(V[0]*sin(float(now_p_ave[2]*pi/180.00))+V[1]*cos(float(now_p_ave[2]*pi/180.00))))*cos(float((Meca_a_t)*pi/180.00));
+  V_out_float[1] = (-V[2]*pi/180.00*Meca_b_y+(V[0]*cos(float(now_p_ave[2]*pi/180.00))-V[1]*sin(float(now_p_ave[2]*pi/180.00))))*sin(float((Meca_b_t)*pi/180.00))+(V[2]*pi/180.00*Meca_b_x+(V[0]*sin(float(now_p_ave[2]*pi/180.00))+V[1]*cos(float(now_p_ave[2]*pi/180.00))))*cos(float((Meca_b_t)*pi/180.00));
+  V_out_float[2] = (-V[2]*pi/180.00*Meca_c_y+(V[0]*cos(float(now_p_ave[2]*pi/180.00))-V[1]*sin(float(now_p_ave[2]*pi/180.00))))*sin(float((Meca_c_t)*pi/180.00))+(V[2]*pi/180.00*Meca_c_x+(V[0]*sin(float(now_p_ave[2]*pi/180.00))+V[1]*cos(float(now_p_ave[2]*pi/180.00))))*cos(float((Meca_c_t)*pi/180.00));
+  V_out_float[3] = (-V[2]*pi/180.00*Meca_d_y+(V[0]*cos(float(now_p_ave[2]*pi/180.00))-V[1]*sin(float(now_p_ave[2]*pi/180.00))))*sin(float((Meca_d_t)*pi/180.00))+(V[2]*pi/180.00*Meca_d_x+(V[0]*sin(float(now_p_ave[2]*pi/180.00))+V[1]*cos(float(now_p_ave[2]*pi/180.00))))*cos(float((Meca_d_t)*pi/180.00));
+
+  
+  double slow_stop = 1.0;//slow_stop以外のところでの倍率
+  double slow_start = 1.0;//slow_start以外のところでの倍率
+  double slow = 5;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
+  
+  //スローストップ
+  int slow_stop_count = ROUTE_POINT_NUM-1-now_num;
+  if(slow_stop_count <= 20){//最後から何個前の点から減速するか
+    slow_stop = slow_stop_count/20.0*(1-slow/100) + slow/100;
+    if(slow_stop > 1.0) slow_stop = 1.0;
+  }else{
+    slow_stop = 1.0;
+  }
+
+  //スロースタート
+  int slow_start_count = now_num;
+  if(slow_start_count <= 20){//最初から何個後の点まで減速するか
+    slow_start = slow_start_count/20.0*(1-slow/100) + slow/100;
+    if(slow_start > 1.0) slow_start = 1.0;
+  }else{
+    slow_start = 1.0;
   }
   
   //最高速度設定
@@ -255,30 +330,13 @@ void velocity(double pre_p, double *vv, double now_pos[3]){
     }
   }
   
-  //スローストップ
-  int slow_stop_count = ROUTE_POINT_NUM-1-min_m_dist_num;
-  if(slow_stop_count <= 20){//最後から何個前の点から減速するか
-    slow_stop = slow_stop_count/20.0*(1-slow/100) + slow/100;
-    if(slow_stop > 1.0) slow_stop = 1.0;
-  }else{
-    slow_stop = 1.0;
-  }
-
-  //スロースタート
-  int slow_start_count = min_m_dist_num;
-  if(slow_start_count <= 20){//最初から何個後の点まで減速するか
-    slow_start = slow_start_count/20.0*(1-slow/100) + slow/100;
-    if(slow_start > 1.0) slow_start = 1.0;
-  }else{
-    slow_start = 1.0;
-  }
-  
+  double V_out_max=200;//(アナログ出力最大)
   //最高速度を最高出力に合わせる
   float V_max = abs(V_out_float[max_v_num]);
   for (int i = 0; i < 4; i++){
     V_out_float[i] = V_out_float[i] / V_max * V_out_max * slow_stop * slow_start;
   }
-  */
+
   //PIDせんでいいんかな…
   /*ここはハズさない
   float PID_V_out_float[4];
@@ -291,88 +349,29 @@ void velocity(double pre_p, double *vv, double now_pos[3]){
     V_PID_out_float[i] += m[i]
   }
   */
-  /*
+
   for (int i = 0; i < 4; i++){
     if(V_out_float[i] > 0){
-      V_out_c[i] = V_out_float[i]+0.5;
+      V_out[i] = int(V_out_float[i]+0.5);
     }else{
-      V_out_c[i] = abs(V_out_float[i])+0.5;
-      V_out_c[i] = -V_out_c[i];
+      V_out[i] = int(abs(V_out_float[i])+0.5);
+      V_out[i] = -V_out[i];
     }
-  }*/
-  
-  for(int i = 0; i < 3; i++){
-    *(vv+i) = v[i];
   }
-  /*
-  for(int i = 0; i < 4; i++){
-    *(v_out+i) = V_out_c[i];
-  }*/
-  /*for (int i = 0; i < 2; i++) {
-    Serial.print(V_resultant[0][i]);
-    Serial.print("|");
-  }
-  Serial.print(e);
-  Serial.print("|");
-  for (int i = 0; i < 3; i++) {
-    Serial.print(now_pos[i]);
-    Serial.print("|");
-  }*/
-}
 
-//Auto
-/*route_set(int route_num){
-  int pre_route_num;
-  if(pre_route_num != route_num){
-    switch(route_num){
-      case 0:
-        ROUTE_POINT_NUM = ROUTE_POINT_NUM_a;
-        for(int i = 0; i < ROUTE_POINT_NUM; i++){
-          for(int j = 0; j < 3; j++){
-            route[i][j] = route_a[i][j];
-          }
-        }
-        break;
-    }
-  pre_route_num = route_num;
+  int direct[4] = {1,1,1,1};
+  for (int i = 0; i < 4; i++){
+    V_out[i] = direct[i]*V_out[i];
   }
-}
-*/
-void loop() {
-  double now_p_ave[3] = {0,0,0};//今の位置の平均 0:X, 1:Y, 2:Ang[rad]
-  double V[3];
-  int V_out[4] = {0,0,0,0};
-  
-  time = micros();
-  dt = float(time - t0)/1000000.00;
-  t0 = time;
-  switch(prog_num){
-    case 0:
-      //route_set(0);
-      break;
-  }
-  I2Crequest(6, 2);//I2Crequest(リクエストするArduinoの番号, dataの何番に返すか);
-  I2Crequest(7, 1);
-  I2Crequest(8, 0);
-  I2Crequest(9, 3);
-  conversion_rate(data,data,dt);
-  Approx(now_p_ave, data);
-  //ここからは経路によって変わる
-  velocity(pre_pos, V, now_p_ave);//v[0], v[1], v[2]を出す, それぞれのメカナムの出力を返す
-  pre_pos = now_p_ave[2];
   
   for (int i = 0; i < 3; i++) {
     Serial.print(now_p_ave[i]);
     Serial.print(F("|"));
   }
-  for (int i = 0; i < 3; i++) {
-    Serial.print(V[i]);
-    Serial.print(F("|"));
-  }
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 4; i++){
     Serial.print(V_out[i]);
     Serial.print(F("|"));
   }
-  Serial.println();
+  Serial.println(now_num);
   
 }

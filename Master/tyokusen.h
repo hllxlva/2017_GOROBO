@@ -1,5 +1,5 @@
-#define ROUTE_POINT_NUM 47
-signed short route[47][3] =
+#define ROUTE_POINT_NUM_a 47
+signed short route_a[47][3] =
 { {    0 ,    0 ,    0 } ,
   {    0 ,    8 ,    0 } ,
   {    0 ,   17 ,    0 } ,
