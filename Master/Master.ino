@@ -22,9 +22,9 @@ volatile int PhotoValue = 0;
 volatile int pre_PhotoValue = 0;
 int Height;
 int Initial_Height = 115;
-int V_out;
-int V_out_e_max=100;
-int V_out_e_min=10;
+int V_out[5] = {0,0,0,0,0};
+int V_out_e_max=150;
+int V_out_e_min=30;
 int dh = 0;
 
 void setup() {
@@ -206,7 +206,7 @@ void velocity(double pre_p, double *vv, double now_pos[3], int *min_num){
 }
 
 //Auto
-route_set(int route_num){
+void route_set(int route_num){
   int pre_route_num = -1;
   if(pre_route_num != route_num){
     switch(route_num){
@@ -234,20 +234,20 @@ void slit_count(int sign){//1か-1を引数に
 void elevating(int value){
   int sign = value/abs(value);
   slit_count(sign);
-  V_out = sign*V_out_e_max*sin(PI/float(value)*float(dh));
-  if(abs(V_out) < abs(V_out_e_min)) V_out = sign*V_out_e_min;
+  V_out[4] = sign*V_out_e_max*sin(PI/float(value)*float(dh));
+  if(abs(V_out[4]) < abs(V_out_e_min)) V_out[4] = sign*V_out_e_min;
   if(abs(dh) >= abs(value)){
     dh = 0;
     prog_num++;
-    V_out = 0;
+    V_out[4] = 0;
   }
 }
 
 void loop() {
-  const double now_p_ave[3];//今の位置の平均 0:X, 1:Y, 2:Ang[rad]
+  double now_p_ave[3];//今の位置の平均 0:X, 1:Y, 2:Ang[rad]
   double V[3];
   int now_num;
-  int V_out[4] = {0,0,0,0};
+  
   
   time = micros();
   dt = float(time - t0)/1000000.00;
@@ -257,6 +257,7 @@ void loop() {
   switch(prog_num){
     case 0:
       route_set(0);
+      //elevating(201);
       break;
   }
   //-------------------------------
@@ -294,11 +295,12 @@ void loop() {
   
   double slow_stop = 1.0;//slow_stop以外のところでの倍率
   double slow_start = 1.0;//slow_start以外のところでの倍率
-  double slow = 5;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
+  double slow = 20;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
+  double count = 20;
   
   //スローストップ
   int slow_stop_count = ROUTE_POINT_NUM-1-now_num;
-  if(slow_stop_count <= 20){//最後から何個前の点から減速するか
+  if(slow_stop_count <= count){//最後から何個前の点から減速するか
     slow_stop = slow_stop_count/20.0*(1-slow/100) + slow/100;
     if(slow_stop > 1.0) slow_stop = 1.0;
   }else{
@@ -307,7 +309,7 @@ void loop() {
 
   //スロースタート
   int slow_start_count = now_num;
-  if(slow_start_count <= 20){//最初から何個後の点まで減速するか
+  if(slow_start_count <= count){//最初から何個後の点まで減速するか
     slow_start = slow_start_count/20.0*(1-slow/100) + slow/100;
     if(slow_start > 1.0) slow_start = 1.0;
   }else{
@@ -330,7 +332,7 @@ void loop() {
     }
   }
   
-  double V_out_max=200;//(アナログ出力最大)
+  double V_out_max=150;//(アナログ出力最大)
   //最高速度を最高出力に合わせる
   float V_max = abs(V_out_float[max_v_num]);
   for (int i = 0; i < 4; i++){
@@ -359,7 +361,7 @@ void loop() {
     }
   }
 
-  int direct[4] = {1,1,1,1};
+  int direct[5] = {1,1,1,1,-1};
   for (int i = 0; i < 4; i++){
     V_out[i] = direct[i]*V_out[i];
   }
@@ -368,7 +370,7 @@ void loop() {
     Serial.print(now_p_ave[i]);
     Serial.print(F("|"));
   }
-  for (int i = 0; i < 4; i++){
+  for (int i = 0; i < 5; i++){
     Serial.print(V_out[i]);
     Serial.print(F("|"));
   }
