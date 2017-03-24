@@ -1,5 +1,7 @@
 #include <Wire.h>
 #include <math.h>
+int LimitSwitch = 4;
+boolean mobile = false;
 const double pi = 3.14;
 double data[4] = {0,0,0,0};//エンコーダの値
 unsigned long time;
@@ -10,13 +12,14 @@ int prog_num = 0;
 int n = 1;//初期設定フラグ
 //route_trace-------------------------------
 #include "tyokusen.h"//ROUTE_POINT_NUM_a, signed short route_a[][]
+#include "back.h"//ROUTE_POINT_NUM_b, signed short route_b[][]
 int ROUTE_POINT_NUM;
 signed short route[100][3];
 boolean route_read = true;
 boolean flag, PRE_R = true;
 double pre_pos;
 //elevating---------------------------------
-boolean limmit_flag;
+boolean limit_flag, elevat = false;
 int PhotoPin = 10;
 volatile int PhotoValue = 0;
 volatile int pre_PhotoValue = 0;
@@ -29,8 +32,9 @@ int dh = 0;
 
 void setup() {
   Wire.begin();
-  Serial.begin(250000);
-  
+  Serial.begin(115200);
+  pinMode(9,OUTPUT);
+  pinMode(LimitSwitch,INPUT) ;
   pinMode(PhotoPin,INPUT) ;
   Height = Initial_Height;
 }
@@ -127,7 +131,7 @@ void velocity(double pre_p, double *vv, double now_pos[3], int *min_num){
   double r;//
   double pre_r;
   double e, eq;//, pre_e, pre_eq;//編差
-  double v_max[] = {10,10};//最高速度{並進, 回転}(並進と回転の出力割合)
+  double v_max[] = {10,20};//最高速度{並進, 回転}(並進と回転の出力割合)
   double Kt = 20.0/*20*/, Kp = 2.0/*5*/;//, Kd = 2;//2(PID)
   double Cp = 0.1, Cd = 0.5;//(PID)
 
@@ -148,6 +152,7 @@ void velocity(double pre_p, double *vv, double now_pos[3], int *min_num){
   
   flag = true;
   if(min_m_dist_num == ROUTE_POINT_NUM - 1){//最後まで行ったら速度0に
+    mobile = true;
     //接線方向の速度
     for(int i = 0; i < 2; i++){
       v_t[i] = route[min_m_dist_num][i] - now_pos[i];
@@ -215,7 +220,19 @@ void route_set(int route_num){
         for(int i = 0; i < ROUTE_POINT_NUM; i++){
           for(int j = 0; j < 3; j++){
             route[i][j] = route_a[i][j];
+            Serial.print(route[i][j]);
           }
+          Serial.println();
+        }
+        break;
+      case 1:
+        ROUTE_POINT_NUM = ROUTE_POINT_NUM_b;
+        for(int i = 0; i < ROUTE_POINT_NUM; i++){
+          for(int j = 0; j < 3; j++){
+            route[i][j] = route_b[i][j];
+            Serial.print(route[i][j]);
+          }
+          Serial.println();
         }
         break;
     }
@@ -237,16 +254,24 @@ void elevating(int value){
   V_out[4] = sign*V_out_e_max*sin(PI/float(value)*float(dh));
   if(abs(V_out[4]) < abs(V_out_e_min)) V_out[4] = sign*V_out_e_min;
   if(abs(dh) >= abs(value)){
-    dh = 0;
-    prog_num++;
+    elevat = true;
     V_out[4] = 0;
   }
 }
 
+void Send(int id, int mdd_output_num, int pwm){
+  Serial.write('H');
+  Serial.write(id);
+  Serial.write(mdd_output_num);
+  Serial.write(highByte(pwm));
+  Serial.write(lowByte(pwm));
+}
+
 void loop() {
+  digitalWrite(9, HIGH);//LTC485, 電圧をかける
   double now_p_ave[3];//今の位置の平均 0:X, 1:Y, 2:Ang[rad]
-  double V[3];
-  int now_num;
+  double V[3];//ロボットの原点の速度 0:X, 1:Y, 2:Ang[rad]
+  int now_num;//routeの今の位置(一番近い点)
   
   
   time = micros();
@@ -257,10 +282,33 @@ void loop() {
   switch(prog_num){
     case 0:
       route_set(0);
-      //elevating(201);
+      elevating(135);
+      break;
+    case 1:
+      delay(1000);
+      prog_num = 2;
+      break;
+    case 2:
+      route_set(1);
       break;
   }
   //-------------------------------
+  boolean limit = digitalRead(LimitSwitch);
+  /*if(limit == 0){
+    V_out[4] = 0;
+    if(limit_flag)elevat = true;
+    limit_flag = false;
+  }else{
+    limit_flag = true;
+  }*/
+  if(elevat == 1 && mobile == 1){
+    prog_num = 1;
+    dh = 0;
+    elevat = false;
+    mobile = false;
+    
+    Serial.println("-----------------------");
+  }
   I2Crequest(6, 2);//I2Crequest(リクエストするArduinoの番号, dataの何番に返すか);
   I2Crequest(7, 1);
   I2Crequest(8, 0);
@@ -295,7 +343,7 @@ void loop() {
   
   double slow_stop = 1.0;//slow_stop以外のところでの倍率
   double slow_start = 1.0;//slow_start以外のところでの倍率
-  double slow = 20;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
+  double slow = 30;//スローで何％まで落とすか(slow関数が効いて進まないとき大きくする)
   double count = 20;
   
   //スローストップ
@@ -361,12 +409,12 @@ void loop() {
     }
   }
 
-  int direct[5] = {1,1,1,1,-1};
-  for (int i = 0; i < 4; i++){
+  int direct[5] = {-1,-1,1,1,-1};
+  for (int i = 0; i < 5; i++){
     V_out[i] = direct[i]*V_out[i];
   }
   
-  for (int i = 0; i < 3; i++) {
+  /*for (int i = 0; i < 3; i++) {
     Serial.print(now_p_ave[i]);
     Serial.print(F("|"));
   }
@@ -374,6 +422,14 @@ void loop() {
     Serial.print(V_out[i]);
     Serial.print(F("|"));
   }
-  Serial.println(now_num);
-  
+  Serial.print(dh);
+  Serial.print(F("|"));
+  Serial.print(elevat);
+  Serial.print(F("|"));
+  Serial.println(prog_num);*/
+  Send(15, 2, V_out[0]); //右後
+  Send(16, 2, V_out[1]); //左後
+  Send(15, 3, V_out[2]); //左前
+  Send(16, 3, V_out[3]); //右前
+  Send(25, 2, V_out[4]); //上下
 }
